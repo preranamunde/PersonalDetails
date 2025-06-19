@@ -1,14 +1,16 @@
+// App.js
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import Stacknavigator from './navigators/stacknavigator';
-import { navigationRef } from './navigators/rootnavigation';
+import DrawerNavigator from './navigators/DrawerNavigator';
 
-const App = () => {
+
+
+const Appp = () => {
   return (
-    <NavigationContainer ref={navigationRef}>
-      <Stacknavigator />
+    <NavigationContainer>
+     <DrawerNavigator/>
     </NavigationContainer>
   );
 };
 
-export default App;
+export default Appp;

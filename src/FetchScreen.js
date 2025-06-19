@@ -11,16 +11,24 @@ import {
   RefreshControl,
 } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 
 const FetchScreen = () => {
+  const navigation = useNavigation();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchUsers();
-    
   }, []);
+
+  // Refresh data when screen comes into focus (after editing)
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchUsers();
+    }, [])
+  );
 
   const fetchUsers = async () => {
     try {
@@ -34,10 +42,10 @@ const FetchScreen = () => {
       
       // Sort by creation date (newest first)
       userList.sort((a, b) => {
-  const dateA = a.createdAt?.toDate?.() ?? new Date(0);
-  const dateB = b.createdAt?.toDate?.() ?? new Date(0);
-  return dateB - dateA; // newest first
-});
+        const dateA = a.createdAt?.toDate?.() ?? new Date(0);
+        const dateB = b.createdAt?.toDate?.() ?? new Date(0);
+        return dateB - dateA; // newest first
+      });
       setUsers(userList);
     } catch (error) {
       console.log("Error fetching users:", error.message);
@@ -51,6 +59,58 @@ const FetchScreen = () => {
     setRefreshing(true);
     await fetchUsers();
     setRefreshing(false);
+  };
+
+  const handleEdit = (user) => {
+    Alert.alert(
+      'Edit User',
+      `Do you want to edit ${user.name}'s information?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Edit',
+          onPress: () => {
+            // Navigate to Details screen with user data for editing
+            navigation.navigate('PersonalDetails', {
+              editMode: true,
+              userData: user,
+            });
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDelete = (user) => {
+    Alert.alert(
+      'Delete User',
+      `Are you sure you want to delete ${user.name}'s information? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteUser(user.id),
+        },
+      ]
+    );
+  };
+
+  const deleteUser = async (userId) => {
+    try {
+      await firestore().collection('users').doc(userId).delete();
+      Alert.alert('Success', 'User deleted successfully');
+      fetchUsers(); // Refresh the list
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      Alert.alert('Error', 'Failed to delete user. Please try again.');
+    }
   };
 
   const formatDate = (timestamp) => {
@@ -95,8 +155,8 @@ const FetchScreen = () => {
       {/* Header with photo and basic info */}
       <View style={styles.header}>
         <View style={styles.photoContainer}>
-          {item.photoURL ? (
-            <Image source={{ uri: item.photoURL }} style={styles.photo} />
+          {item.localImagePath ? (
+            <Image source={{ uri: 'file://' + item.localImagePath }} style={styles.photo} />
           ) : (
             <View style={styles.photoPlaceholder}>
               <Text style={styles.photoPlaceholderText}>
@@ -146,6 +206,28 @@ const FetchScreen = () => {
           <Text style={styles.timestamp}>
             Registered: {formatDate(item.createdAt)}
           </Text>
+          {item.updatedAt && item.updatedAt !== item.createdAt && (
+            <Text style={styles.timestamp}>
+              Last Updated: {formatDate(item.updatedAt)}
+            </Text>
+          )}
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtonsContainer}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.editButton]}
+            onPress={() => handleEdit(item)}
+          >
+            <Text style={styles.editButtonText}>✏️ Edit</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.actionButton, styles.deleteButton]}
+            onPress={() => handleDelete(item)}
+          >
+            <Text style={styles.deleteButtonText}>🗑️ Delete</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </View>
@@ -172,7 +254,12 @@ const FetchScreen = () => {
   return (
     <View style={styles.container}>
       <View style={styles.headerContainer}>
-        <Text style={styles.screenTitle}>Registered Users ({users.length})</Text>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => navigation.navigate('PersonalDetails')}
+        >
+          <Text style={styles.addButtonText}>+ Add New User</Text>
+        </TouchableOpacity>
       </View>
       
       <FlatList
@@ -205,6 +292,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'white',
     textAlign: 'center',
+    marginBottom: 10,
+  },
+  addButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  addButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
   },
   listContainer: {
     padding: 10,
@@ -315,12 +417,45 @@ const styles = StyleSheet.create({
     borderTopColor: '#e9ecef',
     paddingTop: 12,
     marginTop: 8,
+    marginBottom: 15,
   },
   timestamp: {
     fontSize: 12,
     color: '#666',
     textAlign: 'right',
     fontStyle: 'italic',
+    marginBottom: 2,
+  },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e9ecef',
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginHorizontal: 5,
+    alignItems: 'center',
+  },
+  editButton: {
+    backgroundColor: '#007AFF',
+  },
+  editButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteButton: {
+    backgroundColor: '#FF3B30',
+  },
+  deleteButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,

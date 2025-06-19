@@ -1,15 +1,19 @@
+// navigators/stacknavigator.js
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import Details from '../Details';
-import FetchScreen from '../FetchScreen';
+import WelcomeScreen from '../src/WelcomeScreen';
+import DrawerNavigator from './DrawerNavigator';
+import FetchScreen from '../src/FetchScreen';
+
 
 const Stack = createNativeStackNavigator();
 
 const Stacknavigator = () => {
   return (
-    <Stack.Navigator initialRouteName="Details">
-      <Stack.Screen name="Details" component={Details} options={{ headerShown: false }} />
-      <Stack.Screen name="FetchScreen" component={FetchScreen} options={{ headerShown: false }} />
+    <Stack.Navigator initialRouteName="Welcome" screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Welcome" component={WelcomeScreen} />
+      <Stack.Screen name="MainDrawer" component={DrawerNavigator} />
+        <Stack.Screen name="FetchScreen" component={FetchScreen} />
     </Stack.Navigator>
   );
 };

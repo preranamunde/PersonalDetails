@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState,useEffect } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
+  
   ScrollView,
   StyleSheet,
+  params,
   Alert,
   Image,
   Platform,
@@ -13,13 +15,15 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
+
 import { Picker } from '@react-native-picker/picker';
 import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import firestore from '@react-native-firebase/firestore';
-
+import RNFS from 'react-native-fs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 
-const Details = () => {
+const PersonalDetails = (route) => {
   const navigation = useNavigation();
   const [formData, setFormData] = useState({
     name: '',
@@ -35,8 +39,9 @@ const Details = () => {
     subject: '',
     photo: null,
   });
-  
-  const [loading, setLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+const [editUserId, setEditUserId] = useState(null);
+    const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -74,7 +79,64 @@ const Details = () => {
 
   const maritalOptions = ['Unmarried', 'Married', 'Divorced', 'Widowed'];
 
+  // Validate name input
+  const validateNameInput = (text) => {
+  // Allow only alphabets, spaces, and Roman numerals (I, V, X, L, C, D, M)
+  const nameRegex = /^[A-Za-z\s\.\-IVXLCDM]*$/;
+  
+  if (!nameRegex.test(text)) {
+    return false;
+  }
+  
+  // Check if first character is a CAPITAL alphabet
+  if (text.length > 0 && !/^[A-Z]/.test(text)) {
+    return false;
+  }
+  
+  return true;
+};
+
+  // Validate mobile number input
+  const validateMobileInput = (text) => {
+    // Allow only digits
+    if (!/^\d*$/.test(text)) {
+      return false;
+    }
+    
+    // Check if first digit is 6, 7, 8, or 9
+    if (text.length > 0 && !/^[6789]/.test(text)) {
+      return false;
+    }
+    
+    return true;
+  };
+
   const updateFormData = (field, value) => {
+    if (field === 'name') {
+      // Validate name input
+      if (!validateNameInput(value)) {
+        Alert.alert('Invalid Input', 'Name must start with an alphabet and can only contain letters, spaces, dots, hyphens, and Roman numerals (I, V, X, L, C, D, M)');
+        return;
+      }
+      // Limit to 25 characters
+      if (value.length > 25) {
+        Alert.alert('Character Limit', 'Name cannot exceed 25 characters');
+        return;
+      }
+    }
+    
+    if (field === 'mobileNumber') {
+      // Validate mobile number input
+      if (!validateMobileInput(value)) {
+        Alert.alert('Invalid Input', 'Mobile number must start with 6, 7, 8, or 9 and contain only digits');
+        return;
+      }
+      // Limit to 10 characters
+      if (value.length > 10) {
+        return;
+      }
+    }
+    
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -219,17 +281,10 @@ const Details = () => {
     return true;
   };
 
-  // Upload image to Firebase Storage
-  const uploadImage = async (imageAsset) => {
+  // Save image locally to device storage
+  const saveImageLocally = async (imageAsset) => {
     if (!imageAsset) {
       console.log('No image asset provided');
-      return null;
-    }
-
-    // File size validation
-    const maxSizeInBytes = 5 * 1024 * 1024; // 5MB
-    if (imageAsset.fileSize && imageAsset.fileSize > maxSizeInBytes) {
-      Alert.alert('File Too Large', 'Please select an image smaller than 5MB');
       return null;
     }
 
@@ -237,43 +292,43 @@ const Details = () => {
       setIsUploading(true);
       setUploadProgress(10);
 
-      const imageUri = imageAsset.uri;
-      const fileName = imageAsset.fileName || `user_photo_${Date.now()}.jpg`;
-      
-      // Create a reference to Firebase Storage
-      const reference = storage().ref(`user_photos/${fileName}`);
+      // Create unique filename
+      const fileName = `user_photo_${Date.now()}.jpg`;
+      const localPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
       
       setUploadProgress(30);
       
-      // Upload the file
-      const uploadTask = reference.putFile(imageUri);
+      // Copy image from temp location to app's document directory
+      await RNFS.copyFile(imageAsset.uri, localPath);
       
-      // Monitor upload progress
-      uploadTask.on('state_changed', (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        setUploadProgress(Math.round(progress));
-      });
-      
-      // Wait for upload to complete
-      await uploadTask;
-setUploadProgress(90);
+      setUploadProgress(90);
 
-// Get the download URL
-const downloadURL = await reference.getDownloadURL();
-setUploadProgress(100);
-console.log('Image uploaded successfully, URL:', downloadURL);
-return downloadURL;
-} catch (error) {
-console.error('Storage Upload Error:', error);
-// Silently handle error - no Alert shown to user
-return null;
-} finally {
-setTimeout(() => {
-  setIsUploading(false);
-  setUploadProgress(0);
-}, 1000);
-}
-  }
+      console.log('Image saved locally at:', localPath);
+      setUploadProgress(100);
+      
+      return localPath;
+    } catch (error) {
+      console.error('Error saving image locally:', error);
+      Alert.alert('Error', 'Failed to save image locally');
+      return null;
+    } finally {
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(0);
+      }, 1000);
+    }
+  };
+
+  // Save image path to AsyncStorage for future reference
+  const saveImagePathToStorage = async (imagePath, userId) => {
+    try {
+      await AsyncStorage.setItem(`user_image_${userId}`, imagePath);
+      console.log('Image path saved to AsyncStorage');
+    } catch (error) {
+      console.error('Error saving image path to AsyncStorage:', error);
+    }
+  };
+
   // Form validation
   const validateForm = () => {
     const requiredFields = ['name', 'mobileNumber', 'gender', 'state', 'email', 'educationalQualification'];
@@ -284,18 +339,47 @@ setTimeout(() => {
         return false;
       }
     }
+// Add Firebase query to check for existing email/mobile before validation returns true
+const checkDuplicateUser = async () => {
+  // Query Firestore for existing email/mobile
+  // Skip check if in edit mode for same user
+};
+    // Name validation
+    if (!formData.name.trim()) {
+      Alert.alert('Validation Error', 'Please enter a valid name');
+      return false;
+    }
+    
+    if (!/^[A-Za-z]/.test(formData.name.trim())) {
+      Alert.alert('Validation Error', 'Name must start with an alphabet');
+      return false;
+    }
+    
+    if (formData.name.length > 25) {
+      Alert.alert('Validation Error', 'Name cannot exceed 25 characters');
+      return false;
+    }
+
+    // Mobile number validation
+    if (formData.mobileNumber.length !== 10) {
+      Alert.alert('Validation Error', 'Mobile number must be exactly 10 digits');
+      return false;
+    }
+    
+    if (!/^[6789]/.test(formData.mobileNumber)) {
+      Alert.alert('Validation Error', 'Mobile number must start with 6, 7, 8, or 9');
+      return false;
+    }
+    
+    if (!/^\d{10}$/.test(formData.mobileNumber)) {
+      Alert.alert('Validation Error', 'Mobile number must contain only digits');
+      return false;
+    }
 
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
       Alert.alert('Validation Error', 'Please enter a valid email address');
-      return false;
-    }
-
-    // Mobile number validation
-    const mobileRegex = /^[0-9]{10}$/;
-    if (!mobileRegex.test(formData.mobileNumber)) {
-      Alert.alert('Validation Error', 'Please enter a valid 10-digit mobile number');
       return false;
     }
 
@@ -318,134 +402,181 @@ setTimeout(() => {
   };
 
   // Reset form data
-  const resetForm = () => {
+  
+  useEffect(() => {
+  if (route.params?.editMode && route.params?.userData) {
+    setEditMode(true);
+    const userData = route.params.userData;
+    setEditUserId(userData.id);
+
+    // Pre-fill form
     setFormData({
-      name: '',
-      mobileNumber: '',
-      gender: '',
-      maritalStatus: [],
-      state: '',
-      email: '',
-      educationalQualification: '',
-      subject1: '',
-      subject2: '',
-      subject3: '',
-      subject: '',
-      photo: null,
+      name: userData.name || '',
+      mobileNumber: userData.mobileNumber || '',
+      gender: userData.gender || '',
+      maritalStatus: userData.maritalStatus || [],
+      state: userData.state || '',
+      email: userData.email || '',
+      educationalQualification: userData.educationalQualification || '',
+      subject1: userData.subjects?.subject1 || '',
+      subject2: userData.subjects?.subject2 || '',
+      subject3: userData.subjects?.subject3 || '',
+      subject: userData.subject || '',
+      photo: userData.localImagePath ? { uri: 'file://' + userData.localImagePath } : null,
     });
-    setUploadProgress(0);
-    setIsUploading(false);
-  };
+  }
+}, [route.params]);
 
-  // Handle form submission - FIXED VERSION
+const resetForm = () => {
+  setFormData({
+    name: '',
+    mobileNumber: '',
+    gender: '',
+    maritalStatus: [],
+    state: '',
+    email: '',
+    educationalQualification: '',
+    subject1: '',
+    subject2: '',
+    subject3: '',
+    subject: '',
+    photo: null,
+  });
+  setUploadProgress(0);
+  setIsUploading(false);
+  setEditMode(false);      // ✅ Reset edit mode
+  setEditUserId(null);     // ✅ Clear user ID
+};
+
+  // Handle form submission with local image storage
   const handleSubmit = async () => {
-    console.log('Submit button clicked - starting form submission');
-    
-    if (!validateForm()) {
-      console.log('Form validation failed');
-      return;
+  console.log('Submit button clicked - starting form submission');
+
+  if (!(await validateForm())) {
+    console.log('Form validation failed');
+    return;
+  }
+
+  setLoading(true);
+  console.log('Form validation passed, starting submission process');
+
+  try {
+    let localImagePath = null;
+
+    // Save photo locally if user has selected one
+    if (formData.photo) {
+      console.log('Photo detected, saving locally...');
+      localImagePath = await saveImageLocally(formData.photo);
+
+      if (localImagePath) {
+        console.log('Photo saved locally at:', localImagePath);
+      } else {
+        console.log('Photo save failed, proceeding without photo');
+      }
+    } else {
+      console.log('No photo selected, proceeding without photo');
     }
 
-    setLoading(true);
-    console.log('Form validation passed, starting submission process');
+    // Build user data object
+    const userData = {
+      name: formData.name.trim(),
+      mobileNumber: formData.mobileNumber.trim(),
+      gender: formData.gender,
+      maritalStatus: formData.maritalStatus,
+      state: formData.state,
+      email: formData.email.trim().toLowerCase(),
+      educationalQualification: formData.educationalQualification,
+      localImagePath: localImagePath || null,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    };
 
-    try {
-      let photoURL = null;
-
-      // Upload photo if user has selected one
-      if (formData.photo) {
-        console.log('Photo detected, starting upload...');
-        photoURL = await uploadImage(formData.photo);
-        
-        if (photoURL) {
-          console.log('Photo uploaded successfully, URL:', photoURL);
-        } else {
-          console.log('Photo upload failed, proceeding without photo');
-        }
-      } else {
-        console.log('No photo selected, proceeding without photo');
-      }
-
-      // Build user data object
-      const userData = {
-        name: formData.name.trim(),
-        mobileNumber: formData.mobileNumber.trim(),
-        gender: formData.gender,
-        maritalStatus: formData.maritalStatus,
-        state: formData.state,
-        email: formData.email.trim().toLowerCase(),
-        educationalQualification: formData.educationalQualification,
-        photoURL: photoURL,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
+    // Add conditional educational fields
+    if (formData.educationalQualification === 'Graduate') {
+      userData.subjects = {
+        subject1: formData.subject1.trim(),
+        subject2: formData.subject2.trim(),
+        subject3: formData.subject3.trim(),
       };
-
-      // Add education-specific fields
-      if (formData.educationalQualification === 'Graduate') {
-        userData.subjects = {
-          subject1: formData.subject1.trim(),
-          subject2: formData.subject2.trim(),
-          subject3: formData.subject3.trim(),
-        };
-      } else if (formData.educationalQualification === 'Post Graduate') {
-        userData.subject = formData.subject.trim();
-      }
-
-      console.log('Saving user data to Firestore:', userData);
-
-      // Save user to Firestore
-      const docRef = await firestore().collection('users').add(userData);
-      console.log('User data saved successfully with ID:', docRef.id);
-
-      // Show success alert with options
-      Alert.alert(
-        'Registration Successful!',
-        photoURL
-          ? 'User profile with photo has been saved to the database successfully!'
-          : 'User profile has been saved to the database successfully!',
-        [
-          {
-            text: 'View Users',
-            onPress: () => {
-              resetForm();
-              navigation.navigate('FetchScreen');
-            },
-          },
-          {
-            text: 'Add Another',
-            onPress: () => resetForm(),
-            style: 'cancel',
-          },
-        ]
-      );
-
-      return true;
-    } catch (error) {
-      console.error('Error saving data:', error);
-
-      if (error.code === 'firestore/permission-denied') {
-        Alert.alert(
-          'Permission Error',
-          'You do not have permission to save data. Please check Firestore rules.'
-        );
-      } else if (error.code === 'firestore/unavailable') {
-        Alert.alert(
-          'Network Error',
-          'Database is currently unavailable. Please check your internet connection.'
-        );
-      } else {
-        Alert.alert('Error', `Failed to save user data: ${error.message}`);
-      }
-
-      return false;
-    } finally {
-      setLoading(false);
-      // Reset upload states if not currently uploading
-      if (!isUploading) {
-        setUploadProgress(0);
-      }
+    } else if (formData.educationalQualification === 'Post Graduate') {
+      userData.subject = formData.subject.trim();
     }
-  };
+
+    let docRef;
+
+    if (editMode) {
+      // ✅ Edit mode: update existing document
+      await firestore().collection('users').doc(editUserId).update(userData);
+      docRef = { id: editUserId };
+      console.log('User data updated successfully with ID:', editUserId);
+    } else {
+      // ✅ Create mode: add new document
+      docRef = await firestore()
+        .collection('users')
+        .add({
+          ...userData,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        });
+      console.log('User data saved successfully with ID:', docRef.id);
+    }
+
+    // Save local image path (for both create/update)
+    if (localImagePath) {
+      await saveImagePathToStorage(localImagePath, docRef.id);
+    }
+
+    // ✅ Show success alert
+    Alert.alert(
+      editMode ? 'Update Successful!' : 'Registration Successful!',
+      localImagePath
+        ? (editMode
+            ? 'User profile with photo updated successfully!'
+            : 'User profile with photo has been saved locally to the device!')
+        : (editMode
+            ? 'User profile updated successfully!'
+            : 'User profile has been saved to the database successfully!'),
+      [
+        {
+          text: editMode ? 'Back to List' : 'View Users',
+          onPress: () => {
+            resetForm();
+            navigation.navigate('Fetch Personal Details');
+          },
+        },
+        {
+          text: editMode ? 'Continue Editing' : 'Add Another',
+          onPress: () => (editMode ? null : resetForm()),
+          style: 'cancel',
+        },
+      ]
+    );
+
+    return true;
+  } catch (error) {
+    console.error('Error saving data:', error);
+
+    if (error.code === 'firestore/permission-denied') {
+      Alert.alert(
+        'Permission Error',
+        'You do not have permission to save data. Please check Firestore rules.'
+      );
+    } else if (error.code === 'firestore/unavailable') {
+      Alert.alert(
+        'Network Error',
+        'Database is currently unavailable. Please check your internet connection.'
+      );
+    } else {
+      Alert.alert('Error', `Failed to save user data: ${error.message}`);
+    }
+
+    return false;
+  } finally {
+    setLoading(false);
+    if (!isUploading) {
+      setUploadProgress(0);
+    }
+  }
+};
+
 
   // Handle cancel
   const handleCancel = () => {
@@ -514,16 +645,18 @@ setTimeout(() => {
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.form}>
-        <Text style={styles.title}>User Registration</Text>
-
         <Text style={styles.label}>Name *</Text>
         <TextInput
           style={styles.input}
           value={formData.name}
           onChangeText={(value) => updateFormData('name', value)}
-          placeholder="Enter your full name"
+          placeholder="Enter your full name (max 25 chars)"
           editable={!loading}
+          maxLength={25}
         />
+        <Text style={styles.helperText}>
+          Must start with an alphabet, can contain letters, spaces, dots, hyphens, and Roman numerals (I, V, X, L, C, D, M)
+        </Text>
 
         <Text style={styles.label}>Mobile Number *</Text>
         <TextInput
@@ -535,6 +668,9 @@ setTimeout(() => {
           maxLength={10}
           editable={!loading}
         />
+        <Text style={styles.helperText}>
+          Must start with 6, 7, 8, or 9 and be exactly 10 digits
+        </Text>
 
         <Text style={styles.label}>Gender *</Text>
         <View style={styles.radioContainer}>
@@ -635,12 +771,15 @@ setTimeout(() => {
             <Text style={styles.photoInfo}>
               {formData.photo.fileName || 'Selected Image'}
             </Text>
+            <Text style={styles.localStorageNote}>
+              📁 This photo will be saved locally on your device
+            </Text>
             <TouchableOpacity 
               style={[styles.removePhotoButton, loading && styles.disabledButton]}
               onPress={() => updateFormData('photo', null)}
               disabled={loading}
             >
-              <Text style={styles.removePhotoText}>❌ Remove Photo</Text>
+              
             </TouchableOpacity>
           </View>
         )}
@@ -648,7 +787,7 @@ setTimeout(() => {
         {isUploading && uploadProgress > 0 && (
           <View style={styles.progressContainer}>
             <Text style={styles.progressText}>
-              Uploading photo: {uploadProgress.toFixed(0)}%
+              Saving photo locally: {uploadProgress.toFixed(0)}%
             </Text>
             <View style={styles.progressBar}>
               <View style={[styles.progressFill, { width: `${uploadProgress}%` }]} />
@@ -726,8 +865,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     fontStyle: 'italic',
-    marginTop: -5,
+    marginTop: 5,
     marginBottom: 5,
+  },
+  localStorageNote: {
+    fontSize: 12,
+    color: '#007AFF',
+    textAlign: 'center',
+    marginBottom: 10,
+    fontStyle: 'italic',
   },
   input: {
     borderWidth: 1,
@@ -858,7 +1004,7 @@ const styles = StyleSheet.create({
   photoInfo: {
     fontSize: 12,
     color: '#666',
-    marginBottom: 10,
+    marginBottom: 5,
     textAlign: 'center',
   },
   removePhotoButton: {
@@ -937,4 +1083,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default Details;
+export default PersonalDetails;
