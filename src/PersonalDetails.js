@@ -1,4 +1,4 @@
-import React, { useState,useEffect } from 'react';
+import React, { useState,useEffect,useRef } from 'react';
 import {
   View,
   Text,
@@ -23,7 +23,7 @@ import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 
-const PersonalDetails = (route) => {
+const PersonalDetails = ({ route }) => {
   const navigation = useNavigation();
   const [formData, setFormData] = useState({
     name: '',
@@ -38,13 +38,43 @@ const PersonalDetails = (route) => {
     subject3: '',
     subject: '',
     photo: null,
-  });
+    nameError: false,
+    mobileError: false,
+    emailError: false,
+    genderError: false,
+    stateError: false,
+    educationError: false,
+    subject1Error: false,
+    subject2Error: false,
+    subject3Error: false,
+    subjectError: false,
+    // Add these new error message fields:
+    nameErrorMsg: '',
+    mobileErrorMsg: '',
+    emailErrorMsg: '',
+    genderErrorMsg: '',
+    stateErrorMsg: '',
+    educationErrorMsg: '',
+    subject1ErrorMsg: '',
+    subject2ErrorMsg: '',
+    subject3ErrorMsg: '',
+    subjectErrorMsg: '',
+});
   const [editMode, setEditMode] = useState(false);
 const [editUserId, setEditUserId] = useState(null);
     const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
-
+const nameRef = useRef(null);
+const mobileRef = useRef(null);
+const emailRef = useRef(null);
+const genderRef = useRef(null);
+const stateRef = useRef(null);
+const educationRef = useRef(null);
+const subject1Ref = useRef(null);
+const subject2Ref = useRef(null);
+const subject3Ref = useRef(null);
+const subjectRef = useRef(null);
   const states = [
     'Select State',
     'Andhra Pradesh',
@@ -81,21 +111,20 @@ const [editUserId, setEditUserId] = useState(null);
 
   // Validate name input
   const validateNameInput = (text) => {
-  // Allow only alphabets, spaces, and Roman numerals (I, V, X, L, C, D, M)
+  // Allow only alphabets, spaces, dots, hyphens, and Roman numerals (both cases)
   const nameRegex = /^[A-Za-z\s\.\-IVXLCDM]*$/;
   
   if (!nameRegex.test(text)) {
     return false;
   }
   
-  // Check if first character is a CAPITAL alphabet
-  if (text.length > 0 && !/^[A-Z]/.test(text)) {
+  // Only check if first character is an alphabet (not necessarily capital)
+  if (text.length > 0 && !/^[A-Za-z]/.test(text)) {
     return false;
   }
   
   return true;
 };
-
   // Validate mobile number input
   const validateMobileInput = (text) => {
     // Allow only digits
@@ -111,34 +140,60 @@ const [editUserId, setEditUserId] = useState(null);
     return true;
   };
 
-  const updateFormData = (field, value) => {
-    if (field === 'name') {
-      // Validate name input
-      if (!validateNameInput(value)) {
-        Alert.alert('Invalid Input', 'Name must start with an alphabet and can only contain letters, spaces, dots, hyphens, and Roman numerals (I, V, X, L, C, D, M)');
-        return;
-      }
-      // Limit to 25 characters
-      if (value.length > 25) {
-        Alert.alert('Character Limit', 'Name cannot exceed 25 characters');
-        return;
-      }
+ const updateFormData = (field, value) => {
+  // Clear corresponding error state when user starts typing
+  const errorField = field + 'Error';
+  const errorMsgField = field + 'ErrorMsg';
+  
+  // Always clear errors when user starts typing/selecting
+  if (formData[errorField]) {
+    setFormData(prev => ({ 
+      ...prev, 
+      [errorField]: false,
+      [errorMsgField]: ''
+    }));
+  }
+
+  // Special handling for name field
+  if (field === 'name') {
+    if (!validateNameInput(value)) {
+      Alert.alert('Invalid Input', 'Name must start with an alphabet and can only contain letters, spaces, dots, hyphens, and Roman numerals (I, V, X, L, C, D, M)');
+      return;
     }
-    
-    if (field === 'mobileNumber') {
-      // Validate mobile number input
-      if (!validateMobileInput(value)) {
-        Alert.alert('Invalid Input', 'Mobile number must start with 6, 7, 8, or 9 and contain only digits');
-        return;
-      }
-      // Limit to 10 characters
-      if (value.length > 10) {
-        return;
-      }
+    if (value.length > 25) {
+      Alert.alert('Character Limit', 'Name cannot exceed 25 characters');
+      return;
     }
-    
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+    const formattedName = value.toLowerCase().replace(/\b\w/g, char => char.toUpperCase());
+    setFormData(prev => ({ ...prev, [field]: formattedName }));
+    return;
+  }
+  
+  // Special handling for mobile number field
+  if (field === 'mobileNumber') {
+    if (!validateMobileInput(value)) {
+      Alert.alert('Invalid Input', 'Mobile number must start with 6, 7, 8, or 9 and contain only digits');
+      return;
+    }
+    if (value.length > 10) {
+      return;
+    }
+  }
+  
+  // Special handling for subject fields to clear errors immediately
+  if (field === 'subject1' || field === 'subject2' || field === 'subject3' || field === 'subject') {
+    setFormData(prev => ({ 
+      ...prev, 
+      [field]: value,
+      [field + 'Error']: false,
+      [field + 'ErrorMsg']: ''
+    }));
+    return;
+  }
+  
+  // For all other fields, just update the value
+  setFormData(prev => ({ ...prev, [field]: value }));
+};
 
   const handleMaritalStatusChange = (option) => {
     const updatedStatus = formData.maritalStatus.includes(option)
@@ -330,77 +385,194 @@ const [editUserId, setEditUserId] = useState(null);
   };
 
   // Form validation
-  const validateForm = () => {
-    const requiredFields = ['name', 'mobileNumber', 'gender', 'state', 'email', 'educationalQualification'];
-    
-    for (let field of requiredFields) {
-      if (!formData[field] || formData[field] === 'Select State') {
-        Alert.alert('Validation Error', `Please fill in the ${field.replace(/([A-Z])/g, ' $1').toLowerCase()}`);
-        return false;
-      }
+ const validateForm = () => {
+  // Reset all error states first
+  setFormData(prev => ({
+    ...prev,
+    nameError: false,
+    mobileError: false,
+    emailError: false,
+    genderError: false,
+    stateError: false,
+    educationError: false,
+    subject1Error: false,
+    subject2Error: false,
+    subject3Error: false,
+    subjectError: false,
+    nameErrorMsg: '',
+    mobileErrorMsg: '',
+    emailErrorMsg: '',
+    genderErrorMsg: '',
+    stateErrorMsg: '',
+    educationErrorMsg: '',
+    subject1ErrorMsg: '',
+    subject2ErrorMsg: '',
+    subject3ErrorMsg: '',
+    subjectErrorMsg: '',
+  }));
+
+  // Name validation
+  if (!formData.name.trim()) {
+    setFormData(prev => ({ 
+      ...prev, 
+      nameError: true,
+      nameErrorMsg: 'This field is required'
+    }));
+    nameRef.current?.focus();
+    return false;
+  }
+  
+  if (!/^[A-Za-z]/.test(formData.name.trim())) {
+    setFormData(prev => ({ 
+      ...prev, 
+      nameError: true,
+      nameErrorMsg: 'Name must start with an alphabet'
+    }));
+    nameRef.current?.focus();
+    return false;
+  }
+  
+  if (formData.name.length > 25) {
+    setFormData(prev => ({ 
+      ...prev, 
+      nameError: true,
+      nameErrorMsg: 'Name cannot exceed 25 characters'
+    }));
+    nameRef.current?.focus();
+    return false;
+  }
+
+  // Mobile number validation
+  if (!formData.mobileNumber.trim()) {
+    setFormData(prev => ({ 
+      ...prev, 
+      mobileError: true,
+      mobileErrorMsg: 'This field is required'
+    }));
+    mobileRef.current?.focus();
+    return false;
+  }
+  
+  if (formData.mobileNumber.length !== 10) {
+    setFormData(prev => ({ 
+      ...prev, 
+      mobileError: true,
+      mobileErrorMsg: 'Mobile number must be exactly 10 digits'
+    }));
+    mobileRef.current?.focus();
+    return false;
+  }
+  
+  if (!/^[6789]/.test(formData.mobileNumber)) {
+    setFormData(prev => ({ 
+      ...prev, 
+      mobileError: true,
+      mobileErrorMsg: 'Mobile number must start with 6, 7, 8, or 9'
+    }));
+    mobileRef.current?.focus();
+    return false;
+  }
+
+  // Gender validation
+  if (!formData.gender) {
+    setFormData(prev => ({ 
+      ...prev, 
+      genderError: true,
+      genderErrorMsg: 'This field is required'
+    }));
+    return false;
+  }
+
+  // State validation
+  if (!formData.state || formData.state === 'Select State') {
+    setFormData(prev => ({ 
+      ...prev, 
+      stateError: true,
+      stateErrorMsg: 'This field is required'
+    }));
+    return false;
+  }
+
+  // Email validation
+  if (!formData.email.trim()) {
+    setFormData(prev => ({ 
+      ...prev, 
+      emailError: true,
+      emailErrorMsg: 'This field is required'
+    }));
+    emailRef.current?.focus();
+    return false;
+  }
+  
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!emailRegex.test(formData.email)) {
+    setFormData(prev => ({ 
+      ...prev, 
+      emailError: true,
+      emailErrorMsg: 'Please enter a valid email address'
+    }));
+    emailRef.current?.focus();
+    return false;
+  }
+
+  // Educational qualification validation
+  if (!formData.educationalQualification) {
+    setFormData(prev => ({ 
+      ...prev, 
+      educationError: true,
+      educationErrorMsg: 'This field is required'
+    }));
+    return false;
+  }
+
+  // Graduate subjects validation
+  if (formData.educationalQualification === 'Graduate') {
+    if (!formData.subject1.trim()) {
+      setFormData(prev => ({ 
+        ...prev, 
+        subject1Error: true,
+        subject1ErrorMsg: 'This field is required'
+      }));
+      subject1Ref.current?.focus();
+      return false;
     }
-// Add Firebase query to check for existing email/mobile before validation returns true
-const checkDuplicateUser = async () => {
-  // Query Firestore for existing email/mobile
-  // Skip check if in edit mode for same user
+    
+    if (!formData.subject2.trim()) {
+      setFormData(prev => ({ 
+        ...prev, 
+        subject2Error: true,
+        subject2ErrorMsg: 'This field is required'
+      }));
+      subject2Ref.current?.focus();
+      return false;
+    }
+    
+    if (!formData.subject3.trim()) {
+      setFormData(prev => ({ 
+        ...prev, 
+        subject3Error: true,
+        subject3ErrorMsg: 'This field is required'
+      }));
+      subject3Ref.current?.focus();
+      return false;
+    }
+  }
+
+  // Post Graduate subject validation
+  if (formData.educationalQualification === 'Post Graduate') {
+    if (!formData.subject.trim()) {
+      setFormData(prev => ({ 
+        ...prev, 
+        subjectError: true,
+        subjectErrorMsg: 'This field is required'
+      }));
+      subjectRef.current?.focus();
+      return false;
+    }
+  }
+
+  return true;
 };
-    // Name validation
-    if (!formData.name.trim()) {
-      Alert.alert('Validation Error', 'Please enter a valid name');
-      return false;
-    }
-    
-    if (!/^[A-Za-z]/.test(formData.name.trim())) {
-      Alert.alert('Validation Error', 'Name must start with an alphabet');
-      return false;
-    }
-    
-    if (formData.name.length > 25) {
-      Alert.alert('Validation Error', 'Name cannot exceed 25 characters');
-      return false;
-    }
-
-    // Mobile number validation
-    if (formData.mobileNumber.length !== 10) {
-      Alert.alert('Validation Error', 'Mobile number must be exactly 10 digits');
-      return false;
-    }
-    
-    if (!/^[6789]/.test(formData.mobileNumber)) {
-      Alert.alert('Validation Error', 'Mobile number must start with 6, 7, 8, or 9');
-      return false;
-    }
-    
-    if (!/^\d{10}$/.test(formData.mobileNumber)) {
-      Alert.alert('Validation Error', 'Mobile number must contain only digits');
-      return false;
-    }
-
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      Alert.alert('Validation Error', 'Please enter a valid email address');
-      return false;
-    }
-
-    // Educational qualification specific validation
-    if (formData.educationalQualification === 'Graduate') {
-      if (!formData.subject1 || !formData.subject2 || !formData.subject3) {
-        Alert.alert('Validation Error', 'Please fill in all three subjects for graduate qualification');
-        return false;
-      }
-    }
-
-    if (formData.educationalQualification === 'Post Graduate') {
-      if (!formData.subject) {
-        Alert.alert('Validation Error', 'Please fill in the subject for post graduate qualification');
-        return false;
-      }
-    }
-
-    return true;
-  };
-
   // Reset form data
   
   useEffect(() => {
@@ -448,6 +620,7 @@ const resetForm = () => {
   setEditUserId(null);     // ✅ Clear user ID
 };
 
+
   // Handle form submission with local image storage
   const handleSubmit = async () => {
   console.log('Submit button clicked - starting form submission');
@@ -489,6 +662,7 @@ const resetForm = () => {
       localImagePath: localImagePath || null,
       updatedAt: firestore.FieldValue.serverTimestamp(),
     };
+    
 
     // Add conditional educational fields
     if (formData.educationalQualification === 'Graduate') {
@@ -591,103 +765,124 @@ const resetForm = () => {
   };
 
   // Render educational fields based on qualification
-  const renderEducationalFields = () => {
-    if (formData.educationalQualification === 'Graduate') {
-      return (
-        <View style={styles.educationSection}>
-          <Text style={styles.educationLabel}>Subjects for Graduate *</Text>
-          
-          <Text style={styles.subLabel}>Subject 1 *</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.subject1}
-            onChangeText={(value) => updateFormData('subject1', value)}
-            placeholder="Enter Subject 1"
-            editable={!loading}
-          />
+ const renderEducationalFields = () => {
+  if (formData.educationalQualification === 'Graduate') {
+    return (
+      <View style={styles.educationSection}>
+        <Text style={styles.educationLabel}>Subjects for Graduate *</Text>
+        
+        <Text style={styles.subLabel}>Subject 1 *</Text>
+        <TextInput
+          ref={subject1Ref}
+          style={[styles.input, formData.subject1Error && styles.errorInput]}
+          value={formData.subject1}
+          onChangeText={(value) => updateFormData('subject1', value)}
+          placeholder="Enter Subject 1"
+          editable={!loading}
+        />
+        {renderErrorMessage(formData.subject1ErrorMsg)}
 
-          <Text style={styles.subLabel}>Subject 2 *</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.subject2}
-            onChangeText={(value) => updateFormData('subject2', value)}
-            placeholder="Enter Subject 2"
-            editable={!loading}
-          />
+        <Text style={styles.subLabel}>Subject 2 *</Text>
+        <TextInput
+          ref={subject2Ref}
+          style={[styles.input, formData.subject2Error && styles.errorInput]}
+          value={formData.subject2}
+          onChangeText={(value) => updateFormData('subject2', value)}
+          placeholder="Enter Subject 2"
+          editable={!loading}
+        />
+        {renderErrorMessage(formData.subject2ErrorMsg)}
 
-          <Text style={styles.subLabel}>Subject 3 *</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.subject3}
-            onChangeText={(value) => updateFormData('subject3', value)}
-            placeholder="Enter Subject 3"
-            editable={!loading}
-          />
-        </View>
-      );
-    } else if (formData.educationalQualification === 'Post Graduate') {
-      return (
-        <View style={styles.educationSection}>
-          <Text style={styles.educationLabel}>Subject for Post Graduate *</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.subject}
-            onChangeText={(value) => updateFormData('subject', value)}
-            placeholder="Enter Subject"
-            editable={!loading}
-          />
-        </View>
-      );
-    }
-    return null;
-  };
-
+        <Text style={styles.subLabel}>Subject 3 *</Text>
+        <TextInput
+          ref={subject3Ref}
+          style={[styles.input, formData.subject3Error && styles.errorInput]}
+          value={formData.subject3}
+          onChangeText={(value) => updateFormData('subject3', value)}
+          placeholder="Enter Subject 3"
+          editable={!loading}
+        />
+        {renderErrorMessage(formData.subject3ErrorMsg)}
+      </View>
+    );
+  } else if (formData.educationalQualification === 'Post Graduate') {
+    return (
+      <View style={styles.educationSection}>
+        <Text style={styles.educationLabel}>Subject for Post Graduate *</Text>
+        <TextInput
+          ref={subjectRef}
+          style={[styles.input, formData.subjectError && styles.errorInput]}
+          value={formData.subject}
+          onChangeText={(value) => updateFormData('subject', value)}
+          placeholder="Enter Subject"
+          editable={!loading}
+        />
+        {renderErrorMessage(formData.subjectErrorMsg)}
+      </View>
+    );
+  }
+  return null;
+};
+const renderErrorMessage = (errorMsg) => {
+  if (errorMsg) {
+    return (
+      <Text style={styles.errorText}>
+        {errorMsg}
+      </Text>
+    );
+  }
+  return null;
+};
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.form}>
-        <Text style={styles.label}>Name *</Text>
-        <TextInput
-          style={styles.input}
-          value={formData.name}
-          onChangeText={(value) => updateFormData('name', value)}
-          placeholder="Enter your full name (max 25 chars)"
-          editable={!loading}
-          maxLength={25}
-        />
-        <Text style={styles.helperText}>
-          Must start with an alphabet, can contain letters, spaces, dots, hyphens, and Roman numerals (I, V, X, L, C, D, M)
-        </Text>
-
+       <Text style={styles.label}>Name *</Text>
+<TextInput
+  ref={nameRef}
+  style={[styles.input, formData.nameError && styles.errorInput]}
+  value={formData.name}
+  onChangeText={(value) => updateFormData('name', value)}
+  placeholder="Enter your full name (max 25 chars)"
+  editable={!loading}
+  maxLength={25}
+/>
+{renderErrorMessage(formData.nameErrorMsg)}
+<Text style={styles.helperText}>
+  Must start with an alphabet, can contain letters, spaces, dots, hyphens, and Roman numerals (I, V, X, L, C, D, M)
+</Text>
         <Text style={styles.label}>Mobile Number *</Text>
-        <TextInput
-          style={styles.input}
-          value={formData.mobileNumber}
-          onChangeText={(value) => updateFormData('mobileNumber', value)}
-          placeholder="Enter 10-digit mobile number"
-          keyboardType="numeric"
-          maxLength={10}
-          editable={!loading}
-        />
-        <Text style={styles.helperText}>
-          Must start with 6, 7, 8, or 9 and be exactly 10 digits
-        </Text>
+<TextInput
+  ref={mobileRef}
+  style={[styles.input, formData.mobileError && styles.errorInput]}
+  value={formData.mobileNumber}
+  onChangeText={(value) => updateFormData('mobileNumber', value)}
+  placeholder="Enter 10-digit mobile number"
+  keyboardType="numeric"
+  maxLength={10}
+  editable={!loading}
+/>
+{renderErrorMessage(formData.mobileErrorMsg)}
+<Text style={styles.helperText}>
+  Must start with 6, 7, 8, or 9 and be exactly 10 digits
+</Text>
 
-        <Text style={styles.label}>Gender *</Text>
-        <View style={styles.radioContainer}>
-          {['Male', 'Female', 'Other'].map((option) => (
-            <TouchableOpacity
-              key={option}
-              style={styles.radioOption}
-              onPress={() => updateFormData('gender', option)}
-              disabled={loading}
-            >
-              <View style={styles.radioCircle}>
-                {formData.gender === option && <View style={styles.selectedRadio} />}
-              </View>
-              <Text style={styles.radioText}>{option}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+    <Text style={styles.label}>Gender *</Text>
+<View style={[styles.radioContainer, formData.genderError && styles.errorContainer]}>
+  {['Male', 'Female', 'Other'].map((option) => (
+    <TouchableOpacity
+      key={option}
+      style={styles.radioOption}
+      onPress={() => updateFormData('gender', option)}
+      disabled={loading}
+    >
+      <View style={[styles.radioCircle, formData.genderError && styles.errorRadio]}>
+        {formData.gender === option && <View style={styles.selectedRadio} />}
+      </View>
+      <Text style={styles.radioText}>{option}</Text>
+    </TouchableOpacity>
+  ))}
+</View>
+{renderErrorMessage(formData.genderErrorMsg)}
 
         <Text style={styles.label}>Marital Status</Text>
         <View style={styles.checkboxContainer}>
@@ -710,47 +905,58 @@ const resetForm = () => {
         <Text style={styles.helperText}>You can select multiple options</Text>
 
         <Text style={styles.label}>State *</Text>
-        <View style={[styles.pickerContainer, loading && styles.disabledInput]}>
-          <Picker
-            selectedValue={formData.state}
-            onValueChange={(value) => updateFormData('state', value)}
-            style={[styles.picker, { color: 'black' }]}
-            dropdownIconColor="black"
-            enabled={!loading}
-          >
-            {states.map((state) => (
-              <Picker.Item key={state} label={state} value={state} />
-            ))}
-          </Picker>
-        </View>
+<View style={[
+  styles.pickerContainer, 
+  loading && styles.disabledInput,
+  formData.stateError && styles.errorInput
+]}>
+  <Picker
+    selectedValue={formData.state}
+    onValueChange={(value) => updateFormData('state', value)}
+    style={[styles.picker, { color: 'black' }]}
+    dropdownIconColor="black"
+    enabled={!loading}
+  >
+    {states.map((state) => (
+      <Picker.Item key={state} label={state} value={state} />
+    ))}
+  </Picker>
+</View>
+{renderErrorMessage(formData.stateErrorMsg)}
 
-        <Text style={styles.label}>Email *</Text>
-        <TextInput
-          style={styles.input}
-          value={formData.email}
-          onChangeText={(value) => updateFormData('email', value)}
-          placeholder="Enter email address"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          editable={!loading}
-        />
+       <Text style={styles.label}>Email *</Text>
+<TextInput
+  ref={emailRef}
+  style={[styles.input, formData.emailError && styles.errorInput]}
+  value={formData.email}
+  onChangeText={(value) => updateFormData('email', value)}
+  placeholder="Enter email address"
+  keyboardType="email-address"
+  autoCapitalize="none"
+  editable={!loading}
+/>
+{renderErrorMessage(formData.emailErrorMsg)}
 
         <Text style={styles.label}>Educational Qualification *</Text>
-        <View style={[styles.pickerContainer, loading && styles.disabledInput]}>
-          <Picker
-            selectedValue={formData.educationalQualification}
-            onValueChange={(value) => updateFormData('educationalQualification', value)}
-            style={[styles.picker, { color: 'black' }]}
-            dropdownIconColor="black"
-            enabled={!loading}
-          >
-            <Picker.Item label="Select Qualification" value="" />
-            <Picker.Item label="Graduate" value="Graduate" />
-            <Picker.Item label="Post Graduate" value="Post Graduate" />
-            <Picker.Item label="Other" value="Other" />
-          </Picker>
-        </View>
-
+<View style={[
+  styles.pickerContainer, 
+  loading && styles.disabledInput,
+  formData.educationError && styles.errorInput
+]}>
+  <Picker
+    selectedValue={formData.educationalQualification}
+    onValueChange={(value) => updateFormData('educationalQualification', value)}
+    style={[styles.picker, { color: 'black' }]}
+    dropdownIconColor="black"
+    enabled={!loading}
+  >
+    <Picker.Item label="Select Qualification" value="" />
+    <Picker.Item label="Graduate" value="Graduate" />
+    <Picker.Item label="Post Graduate" value="Post Graduate" />
+    <Picker.Item label="Other" value="Other" />
+  </Picker>
+</View>
+{renderErrorMessage(formData.educationErrorMsg)}
         {renderEducationalFields()}
 
         <Text style={styles.label}>Profile Photo (Optional)</Text>
@@ -883,6 +1089,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#fff',
   },
+   errorInput: {
+    borderColor: '#ff4444',
+    borderWidth: 2,
+  },
+  errorContainer: {
+  borderWidth: 2,
+  borderColor: '#ff4444',
+  borderRadius: 8,
+  padding: 10,
+  backgroundColor: '#fff5f5',
+},
+errorText: {
+    color: '#ff4444',
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 8,
+    fontWeight: '500',
+  },
   disabledInput: {
     backgroundColor: '#f5f5f5',
     opacity: 0.6,
@@ -892,6 +1116,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     marginBottom: 10,
   },
+  errorRadio: {
+  borderColor: '#ff4444',
+  borderWidth: 2,
+},
   radioOption: {
     flexDirection: 'row',
     alignItems: 'center',
